@@ -48,7 +48,7 @@ export default{async fetch(req,env){
    const exists=await env.DB.prepare("SELECT id FROM users WHERE role='admin' LIMIT 1").first();
    if(exists)return J({error:"An administrator is already configured"},409);
    const email=clean(body.email,120).toLowerCase(),name=clean(body.name,30),pw=String(body.password||"");
-   if(!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)||name.length<2||pw.length<12)return J({error:"Valid email, name and password of at least 12 characters required"},400);
+   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)||name.length<2||pw.length<12)return J({error:"Valid email, name and password of at least 12 characters required"},400);
    const salt=rnd(16);
    try{await env.DB.prepare("INSERT INTO users(email,name,salt,pw,role,created_at) VALUES(?,?,?,?, 'admin', ?)").bind(email,name,salt,await pbkdf(pw,salt),Date.now()).run()}
    catch{return J({error:"Email already registered"},409)}
