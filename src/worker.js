@@ -40,6 +40,20 @@ export default{async fetch(req,env){
   if(m!=="GET"){const o=req.headers.get("origin");if(o&&o!==url.origin)return J({error:"Bad origin"},403);if(!(req.headers.get("content-type")||"").includes("json"))return J({error:"JSON required"},415)}
   const body=m==="GET"?{}:await req.json().catch(()=>({}));const me=await user(req,env);
   const need=()=>me?null:J({error:"Please sign in"},401);let r;
+  if(p==="/api/admin/setup"&&m==="POST"){
+   if(!env.ADMIN_SETUP_TOKEN)return J({error:"Administrator setup is not configured"},503);
+   if(!await limit(env,"admin-setup:"+ip,5,36e5))return J({error:"Too many attempts"},429);
+   const supplied=String(body.setup_token||"");
+   if(supplied.length!==env.ADMIN_SETUP_TOKEN.length||supplied!==env.ADMIN_SETUP_TOKEN)return J({error:"Invalid setup token"},403);
+   const exists=await env.DB.prepare("SELECT id FROM users WHERE role='admin' LIMIT 1").first();
+   if(exists)return J({error:"An administrator is already configured"},409);
+   const email=clean(body.email,120).toLowerCase(),name=clean(body.name,30),pw=String(body.password||"");
+   if(!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)||name.length<2||pw.length<12)return J({error:"Valid email, name and password of at least 12 characters required"},400);
+   const salt=rnd(16);
+   try{await env.DB.prepare("INSERT INTO users(email,name,salt,pw,role,created_at) VALUES(?,?,?,?, 'admin', ?)").bind(email,name,salt,await pbkdf(pw,salt),Date.now()).run()}
+   catch{return J({error:"Email already registered"},409)}
+   return login(env,email,pw)
+  }
   if(p==="/api/register"&&m==="POST"){if(!await limit(env,"reg:"+ip,5,36e5))return J({error:"Too many attempts"},429);
    const email=clean(body.email,120).toLowerCase(),name=clean(body.name,30),pw=String(body.password||"");
    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)||name.length<2||pw.length<8)return J({error:"Valid email, name and 8+ char password required"},400);
