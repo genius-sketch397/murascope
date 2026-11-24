@@ -22,7 +22,7 @@ async function bizPage(env,slug,origin){
  if(b.n)ld.aggregateRating={"@type":"AggregateRating",ratingValue:b.avg.toFixed(1),reviewCount:b.n};
  const dist=[5,4,3,2,1].map(s=>`<div>${s} stars — ${rs.filter(r=>r.rating==s).length}</div>`).join("");
  return page(`${b.name} — ${b.cat} in ${b.area}, ${b.town} | MuraScope`,b.description.slice(0,155),
- `<header><a class="logo" href="/">Mura<b>Scope</b></a></header><main><p><a href="/">← All businesses</a></p><h1>${E(b.name)}</h1><p class="mu">${E(b.cat)} · ${E(b.area)}, ${E(b.town)}</p>
+ `<header><a class="logo" href="/">Mura<b>Scope</b></a></header><main><p><a href="/">← All businesses</a></p><h1>${E(b.name)}</h1><p class="mu">${E(b.cat)} · ${E(b.area)}</p>
  <p class="st">${"★".repeat(Math.round(b.avg))}${"☆".repeat(5-Math.round(b.avg))} <b>${b.n?b.avg.toFixed(1):"New"}</b> (${b.n} reviews)</p>${b.youtube_url?`<div class="video-frame"><iframe src="https://www.youtube-nocookie.com/embed/${E(ytId(b.youtube_url))}" title="Business video" loading="lazy" allowfullscreen></iframe></div>`:""}<p>${E(b.description)}</p>${b.contact?`<p class="mu">Contact: ${E(b.contact)}</p>`:""}
  <p><a class="btn" href="${E(b.maps_url)}" target="_blank" rel="noopener">Open in Google Maps</a></p><div class="card">${dist}</div><h2>Reviews</h2>
  ${rs.map(r=>`<div class="card"><span class="st">${"★".repeat(r.rating)}</span> <b>${E(r.name)}</b> <span class="mu">${new Date(r.created_at).toLocaleDateString("en-GB")}</span><p>${E(r.body)}</p><button onclick="act('/api/reviews/${r.id}/helpful')">Helpful (${r.helpful})</button> <button onclick="rep('review',${r.id})">Report</button></div>`).join("")||"<p class='mu'>No reviews yet.</p>"}
