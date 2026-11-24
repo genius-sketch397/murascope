@@ -12,6 +12,3 @@ binding = "DB"
 database_name = "murascope"
 database_id = "d2eb1370-9f03-40ff-8e70-92253121f982"
 
-[[r2_buckets]]
-binding = "PHOTOS"
-bucket_name = "murascope-photos"
