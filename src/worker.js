@@ -12,18 +12,17 @@ async function limit(env,k,max,win){const n=Date.now();await env.DB.prepare("DEL
  await env.DB.prepare("INSERT INTO rl(k,ts) VALUES(?,?)").bind(k,n).run();return true}
 async function user(req,env){const m=(req.headers.get("cookie")||"").match(/ms=([a-f0-9]+)/);if(!m)return null;
  return env.DB.prepare("SELECT u.id,u.name,u.email,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires>?").bind(await sha(m[1]),Date.now()).first()}
-const SEL=`SELECT b.id,b.slug,b.name,c.name cat,c.slug cat_slug,b.area,b.town,b.region,b.description,b.maps_url,b.contact,b.created_at,(SELECT p.object_key FROM business_photos p WHERE p.business_id=b.id ORDER BY p.created_at,p.id LIMIT 1) cover_key,COALESCE(AVG(r.rating),0) avg,COUNT(r.id) n FROM businesses b JOIN categories c ON c.id=b.category_id LEFT JOIN reviews r ON r.business_id=b.id AND r.status='published'`;
+const SEL=`SELECT b.id,b.slug,b.name,c.name cat,c.slug cat_slug,b.area,b.town,b.region,b.description,b.maps_url,b.contact,b.youtube_url,b.created_at,COALESCE(AVG(r.rating),0) avg,COUNT(r.id) n FROM businesses b JOIN categories c ON c.id=b.category_id LEFT JOIN reviews r ON r.business_id=b.id AND r.status='published'`;
 function page(title,desc,body,extra=""){return new Response(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${E(title)}</title><meta name="description" content="${E(desc)}"><meta property="og:title" content="${E(title)}"><meta property="og:description" content="${E(desc)}"><link rel="stylesheet" href="/app.css">${extra}</head><body>${body}</body></html>`,{headers:{"content-type":"text/html;charset=utf-8","cache-control":"public,max-age=60"}})}
 async function bizPage(env,slug,origin){
  const b=await env.DB.prepare(SEL+" WHERE b.slug=? AND b.status='published' GROUP BY b.id").bind(slug).first();if(!b)return new Response("Not found",{status:404});
- const photos=(await env.DB.prepare("SELECT object_key FROM business_photos WHERE business_id=? ORDER BY created_at,id LIMIT 5").bind(b.id).all()).results;
  const rs=(await env.DB.prepare("SELECT r.id,r.rating,r.body,r.created_at,u.name,(SELECT COUNT(*) FROM votes v WHERE v.review_id=r.id) helpful FROM reviews r JOIN users u ON u.id=r.user_id WHERE r.business_id=? AND r.status='published' ORDER BY r.created_at DESC LIMIT 50").bind(b.id).all()).results;
  const ld={"@context":"https://schema.org","@type":"LocalBusiness",name:b.name,description:b.description,address:{"@type":"PostalAddress",addressLocality:b.town,addressRegion:b.region,addressCountry:"KE"},hasMap:b.maps_url,url:origin+"/b/"+b.slug};
  if(b.n)ld.aggregateRating={"@type":"AggregateRating",ratingValue:b.avg.toFixed(1),reviewCount:b.n};
  const dist=[5,4,3,2,1].map(s=>`<div>${s} stars — ${rs.filter(r=>r.rating==s).length}</div>`).join("");
  return page(`${b.name} — ${b.cat} in ${b.area}, ${b.town} | MuraScope`,b.description.slice(0,155),
  `<header><a class="logo" href="/">Mura<b>Scope</b></a></header><main><p><a href="/">← All businesses</a></p><h1>${E(b.name)}</h1><p class="mu">${E(b.cat)} · ${E(b.area)}, ${E(b.town)}</p>
- <p class="st">${"★".repeat(Math.round(b.avg))}${"☆".repeat(5-Math.round(b.avg))} <b>${b.n?b.avg.toFixed(1):"New"}</b> (${b.n} reviews)</p><div class="photo-gallery">${photos.map(ph=>`<img src="/media/${E(ph.object_key)}" alt="${E(b.name)} photo" loading="lazy">`).join("")}</div><p>${E(b.description)}</p>${b.contact?`<p class="mu">Contact: ${E(b.contact)}</p>`:""}
+ <p class="st">${"★".repeat(Math.round(b.avg))}${"☆".repeat(5-Math.round(b.avg))} <b>${b.n?b.avg.toFixed(1):"New"}</b> (${b.n} reviews)</p>${b.youtube_url?`<div class="video-frame"><iframe src="https://www.youtube-nocookie.com/embed/${E(b.youtube_url)}" title="Business video" loading="lazy" allowfullscreen></iframe></div>`:""}<p>${E(b.description)}</p>${b.contact?`<p class="mu">Contact: ${E(b.contact)}</p>`:""}
  <p><a class="btn" href="${E(b.maps_url)}" target="_blank" rel="noopener">Open in Google Maps</a></p><div class="card">${dist}</div><h2>Reviews</h2>
  ${rs.map(r=>`<div class="card"><span class="st">${"★".repeat(r.rating)}</span> <b>${E(r.name)}</b> <span class="mu">${new Date(r.created_at).toLocaleDateString("en-GB")}</span><p>${E(r.body)}</p><button onclick="act('/api/reviews/${r.id}/helpful')">Helpful (${r.helpful})</button> <button onclick="rep('review',${r.id})">Report</button></div>`).join("")||"<p class='mu'>No reviews yet.</p>"}
  <div class="card"><h3>Write a review</h3><select id="r"><option value="5">5 ★</option><option value="4">4 ★</option><option value="3">3 ★</option><option value="2">2 ★</option><option value="1">1 ★</option></select><textarea id="t" rows="4" maxlength="800" placeholder="Describe your genuine experience"></textarea><button onclick="act('/api/businesses/${b.slug}/reviews',{rating:+r.value,body:t.value})">Post review</button> <button onclick="rep('business',${b.id})">Report listing / request correction</button><p class="mu">You need an account — <a href="/#account">sign in</a>.</p></div></main>
@@ -36,13 +35,10 @@ async function login(env,email,pw){const u=await env.DB.prepare("SELECT id,salt,
  return J({ok:1},200,{"set-cookie":`ms=${t}; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax`})}
 export default{async fetch(req,env){
  const url=new URL(req.url),p=url.pathname,m=req.method,ip=req.headers.get("cf-connecting-ip")||"x";
- const media=p.match(/^\/media\/([a-f0-9]{32})$/);
- if(media&&m==="GET"){const obj=await env.PHOTOS.get(media[1]);if(!obj)return new Response("Not found",{status:404});return new Response(obj.body,{headers:{"content-type":obj.httpMetadata?.contentType||"application/octet-stream","cache-control":"public,max-age=86400","x-content-type-options":"nosniff"}})}
  if(p.startsWith("/api/")){
   try{
-  const photoUpload=/^\/api\/businesses\/([a-z0-9-]+)\/photos$/.exec(p);
-  if(m!=="GET"){const o=req.headers.get("origin");if(o&&o!==url.origin)return J({error:"Bad origin"},403);if(!(req.headers.get("content-type")||"").includes("json")&&!photoUpload)return J({error:"JSON required"},415)}
-  const body=m==="GET"||photoUpload?{}:await req.json().catch(()=>({}));const me=await user(req,env);
+  if(m!=="GET"){const o=req.headers.get("origin");if(o&&o!==url.origin)return J({error:"Bad origin"},403);if(!(req.headers.get("content-type")||"").includes("json"))return J({error:"JSON required"},415)}
+  const body=m==="GET"?{}:await req.json().catch(()=>({}));const me=await user(req,env);
   const need=()=>me?null:J({error:"Please sign in"},401);let r;
   if(p==="/api/admin/setup"&&m==="POST"){
    if(!env.ADMIN_SETUP_TOKEN)return J({error:"Administrator setup is not configured"},503);
@@ -72,25 +68,10 @@ export default{async fetch(req,env){
    if(q){w+=" AND (b.name LIKE ? OR b.description LIKE ? OR b.area LIKE ? OR b.town LIKE ? OR c.name LIKE ?)";const l="%"+q.replace(/[%_]/g,"")+"%";a.push(l,l,l,l,l)}
    const o=sort==="new"?"b.created_at DESC":sort==="pop"?"n DESC":"avg DESC,n DESC";
    return J((await env.DB.prepare(SEL+w+` GROUP BY b.id HAVING avg>=${min} ORDER BY ${o} LIMIT 60`).bind(...a).all()).results,200,{"cache-control":"public,max-age=30"})}
-  if(photoUpload&&m==="POST"){
-   const e=need();if(e)return e;if(!env.PHOTOS)return J({error:"Photo storage is not configured"},503);
-   const b=await env.DB.prepare("SELECT id,submitted_by FROM businesses WHERE slug=?").bind(photoUpload[1]).first();
-   if(!b)return J({error:"Business not found"},404);if(me.role!=="admin"&&b.submitted_by!==me.id)return J({error:"You cannot add photos to this business"},403);
-   const count=await env.DB.prepare("SELECT COUNT(*) c FROM business_photos WHERE business_id=?").bind(b.id).first();if(count.c>=5)return J({error:"Maximum 5 photos per business"},400);
-   const form=await req.formData(),file=form.get("photo");if(!(file instanceof File)||!file.size)return J({error:"Choose an image first"},400);
-   if(file.size>5*1024*1024)return J({error:"Each photo must be 5 MB or smaller"},400);
-   if(!["image/jpeg","image/png","image/webp"].includes(file.type))return J({error:"Use JPG, PNG or WebP images"},400);
-   const bytes=new Uint8Array(await file.slice(0,12).arrayBuffer()),jpeg=bytes[0]===255&&bytes[1]===216&&bytes[2]===255,png=bytes[0]===137&&bytes[1]===80&&bytes[2]===78&&bytes[3]===71,webp=String.fromCharCode(...bytes.slice(0,4))==="RIFF"&&String.fromCharCode(...bytes.slice(8,12))==="WEBP";
-   if(!(jpeg||png||webp))return J({error:"The selected file is not a valid JPG, PNG or WebP image"},400);
-   const key=rnd(16);await env.PHOTOS.put(key,file.stream(),{httpMetadata:{contentType:file.type}});
-   try{await env.DB.prepare("INSERT INTO business_photos(business_id,object_key,content_type,size_bytes,created_at) VALUES(?,?,?,?,?)").bind(b.id,key,file.type,file.size,Date.now()).run()}
-   catch(err){await env.PHOTOS.delete(key);throw err}
-   return J({ok:1,url:"/media/"+key},201);
-  }
   if(p==="/api/businesses"&&m==="POST"){const e=need();if(e)return e;if(!await limit(env,"sub:"+me.id,5,864e5))return J({error:"Daily submission limit reached"},429);
-   const name=clean(body.name,80),desc=clean(body.description,500),area=clean(body.area,60),maps=clean(body.maps_url,500),cat=await env.DB.prepare("SELECT id FROM categories WHERE slug=?").bind(clean(body.category,40)).first();
-   if(name.length<2||desc.length<10||!area||!cat)return J({error:"Name, category, description and area are required"},400);if(!MAPS.test(maps))return J({error:"Enter a valid Google Maps link"},400);
-   const slug=slugify(name),ins=await env.DB.prepare("INSERT INTO businesses(slug,name,category_id,description,area,maps_url,contact,status,submitted_by,created_at) VALUES(?,?,?,?,?,?,?,'pending',?,?)").bind(slug,name,cat.id,desc,area,maps,clean(body.contact,80)||null,me.id,Date.now()).run();
+   const name=clean(body.name,80),desc=clean(body.description,500),area=clean(body.area,60),maps=clean(body.maps_url,500),youtube=clean(body.youtube_url,300),cat=await env.DB.prepare("SELECT id FROM categories WHERE slug=?").bind(clean(body.category,40)).first();
+   if(name.length<2||desc.length<10||!area||!cat)return J({error:"Name, category, description and area are required"},400);if(!MAPS.test(maps))return J({error:"Enter a valid Google Maps link"},400);if(youtube&&!/^https:\/\/(www\.)?(youtube\.com\/(watch\?v=|embed\/|shorts\/)|youtu\.be\/)[A-Za-z0-9_-]{11}/.test(youtube))return J({error:"Enter a valid YouTube video link"},400);
+   const slug=slugify(name),ins=await env.DB.prepare("INSERT INTO businesses(slug,name,category_id,description,area,maps_url,contact,youtube_url,status,submitted_by,created_at) VALUES(?,?,?,?,?,?,?,?, 'pending',?,?)").bind(slug,name,cat.id,desc,area,maps,clean(body.contact,80)||null,youtube||null,me.id,Date.now()).run();
    return J({ok:1,id:ins.meta.last_row_id,slug,message:"Submitted. It will appear once an administrator approves it."},201)}
   if(r=p.match(/^\/api\/businesses\/([a-z0-9-]+)\/reviews$/)){if(m!=="POST")return J({error:"Method"},405);const e=need();if(e)return e;
    if(!await limit(env,"rev:"+me.id,10,864e5)||!await limit(env,"revip:"+ip,20,864e5))return J({error:"Review limit reached"},429);
@@ -104,7 +85,7 @@ export default{async fetch(req,env){
    await env.DB.prepare("INSERT INTO reports(kind,target_id,reason,note,user_id,created_at) VALUES(?,?,?,?,?,?)").bind(body.kind,+body.target_id,clean(body.reason,60),clean(body.note,400),me.id,Date.now()).run();return J({ok:1},201)}
   if(p.startsWith("/api/admin/")){if(!me)return J({error:"Please sign in"},401);if(me.role!=="admin")return J({error:"Forbidden"},403);const D=env.DB;
    if(p==="/api/admin/stats")return J(await D.prepare("SELECT (SELECT COUNT(*) FROM businesses WHERE status='published') businesses,(SELECT COUNT(*) FROM businesses WHERE status='pending') pending,(SELECT COUNT(*) FROM reviews) reviews,(SELECT COUNT(*) FROM reports WHERE status='open' AND kind='review') reported_reviews,(SELECT COUNT(*) FROM businesses WHERE created_at>"+(Date.now()-6048e5)+") new_this_week").first());
-   if(p==="/api/admin/pending")return J((await D.prepare("SELECT b.*,c.name cat,(SELECT p.object_key FROM business_photos p WHERE p.business_id=b.id ORDER BY p.created_at,p.id LIMIT 1) cover_key FROM businesses b JOIN categories c ON c.id=b.category_id WHERE b.status='pending' ORDER BY b.created_at").all()).results);
+   if(p==="/api/admin/pending")return J((await D.prepare("SELECT b.*,c.name cat FROM businesses b JOIN categories c ON c.id=b.category_id WHERE b.status='pending' ORDER BY b.created_at").all()).results);
    if(p==="/api/admin/businesses")return J((await D.prepare("SELECT b.id,b.slug,b.name,b.area,b.status,c.name cat FROM businesses b JOIN categories c ON c.id=b.category_id ORDER BY b.created_at DESC LIMIT 200").all()).results);
    if(p==="/api/admin/reviews")return J((await D.prepare("SELECT r.id,r.rating,r.body,b.name business,u.name FROM reviews r JOIN businesses b ON b.id=r.business_id JOIN users u ON u.id=r.user_id ORDER BY r.created_at DESC LIMIT 100").all()).results);
    if(p==="/api/admin/reports")return J((await D.prepare("SELECT * FROM reports WHERE status='open' ORDER BY created_at DESC LIMIT 100").all()).results);
