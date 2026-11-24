@@ -1,0 +1,26 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MuraScope — Local Business Reviews & Discovery in Murang’a, Kenya</title>
+<meta name="description" content="Find and review hotels, restaurants, salons, shops and more in Murang’a. Real customer experiences with Google Maps locations.">
+<link rel="stylesheet" href="/app.css"></head><body>
+<header><a class="logo" href="/">Mura<b>Scope</b></a><div class="row" style="flex:none"><button id="acct" onclick="openAcct()">Sign in</button><button class="pr" onclick="openSub()">+ Suggest business</button></div></header>
+<main><h1>Find the best of Murang’a</h1><p class="mu">Honest reviews from real customers. Search by name, category or area.</p>
+<input id="q" type="search" placeholder="Search businesses, categories, areas…" aria-label="Search" oninput="load()">
+<div class="row"><select id="min" onchange="load()" aria-label="Rating"><option value="0">Any rating</option><option value="4">4★ & up</option><option value="3">3★ & up</option></select><select id="sort" onchange="load()" aria-label="Sort"><option value="top">Highest rated</option><option value="new">Recently added</option><option value="pop">Most reviewed</option></select></div>
+<div class="chips" id="chips"></div><div class="grid" id="list"></div>
+<h2>How it works</h2><div class="grid"><div class="card"><b>1. Discover</b><p class="mu">Search or browse by category and area.</p></div><div class="card"><b>2. Review</b><p class="mu">Share your honest experience.</p></div><div class="card"><b>3. Navigate</b><p class="mu">Open the location in Google Maps.</p></div></div></main>
+<dialog id="dlg" style="background:var(--card);color:var(--tx);border:1px solid var(--line);border-radius:14px;width:min(500px,94vw)"></dialog>
+<script>
+const $=s=>document.querySelector(s),E=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let cat="",me=null,cats=[];
+const api=async(u,b)=>{const r=await fetch(u,b?{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(b)}:{});const d=await r.json();if(!r.ok)throw new Error(d.error||"Failed");return d};
+async function load(){const p=new URLSearchParams({q:$("#q").value,cat,min:$("#min").value,sort:$("#sort").value});const l=await api("/api/businesses?"+p);
+ $("#list").innerHTML=l.map(b=>`<div class="card"><span class="mu">${E(b.cat)}</span><h3 style="margin:4px 0"><a href="/b/${E(b.slug)}" style="color:inherit;text-decoration:none">${E(b.name)}</a></h3><div class="mu">${E(b.area)}, ${E(b.town)}</div><div><span class="st">${"★".repeat(Math.round(b.avg))}${"☆".repeat(5-Math.round(b.avg))}</span> <b>${b.n?b.avg.toFixed(1):"New"}</b> <span class="mu">(${b.n})</span></div><p class="mu">${E(b.description.slice(0,110))}</p><div class="row"><a class="btn" href="/b/${E(b.slug)}">Details</a><a class="btn" style="background:var(--card);color:var(--tx);border:1px solid var(--line)" href="${E(b.maps_url)}" target="_blank" rel="noopener">Google Maps</a></div></div>`).join("")||'<div class="card mu">No businesses found yet.</div>'}
+function chips(){$("#chips").innerHTML=[{slug:"",name:"All"},...cats].map(c=>`<button class="${c.slug==cat?"on":""}" onclick="cat='${E(c.slug)}';chips();load()">${E(c.name)}</button>`).join("")}
+function dlg(h){const d=$("#dlg");d.innerHTML=h+'<button onclick="$(\'#dlg\').close()" style="width:100%">Close</button>';d.showModal()}
+function openAcct(){if(me)return dlg(`<p>Signed in as <b>${E(me.name)}</b></p><button onclick="api('/api/logout',{}).then(()=>location.reload())">Sign out</button>`);
+ dlg('<h3>Account</h3><input id="e" type="email" placeholder="Email"><input id="n" placeholder="Display name (for sign-up)"><input id="p" type="password" placeholder="Password (8+ chars)"><div class="row"><button class="pr" onclick="auth(\'login\')">Sign in</button><button onclick="auth(\'register\')">Register</button></div>')}
+async function auth(k){try{await api("/api/"+k,{email:$("#e").value,name:$("#n").value,password:$("#p").value});location.reload()}catch(e){alert(e.message)}}
+function openSub(){if(!me)return openAcct();dlg(`<h3>Suggest a business</h3><p class="mu">Stays private until an admin approves it.</p><input id="sn" placeholder="Business name"><select id="sc">${cats.map(c=>`<option value="${E(c.slug)}">${E(c.name)}</option>`).join("")}</select><textarea id="sd" rows="3" placeholder="Description"></textarea><input id="sa" placeholder="Area / neighbourhood"><input id="sm" type="url" placeholder="Google Maps link"><input id="sk" placeholder="Contact (optional)"><button class="pr" style="width:100%;margin-bottom:8px" onclick="sub()">Submit</button>`)}
+async function sub(){try{const d=await api("/api/businesses",{name:$("#sn").value,category:$("#sc").value,description:$("#sd").value,area:$("#sa").value,maps_url:$("#sm").value,contact:$("#sk").value});$("#dlg").close();alert(d.message)}catch(e){alert(e.message)}}
+(async()=>{cats=await api("/api/categories");chips();me=(await api("/api/me")).user;if(me)$("#acct").textContent=me.name;if(location.hash=="#account")openAcct();load()})();
+</script></body></html>

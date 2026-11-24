@@ -1,0 +1,19 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>MuraScope Admin</title><link rel="stylesheet" href="/app.css"></head><body>
+<header><a class="logo" href="/">Mura<b>Scope</b> Admin</a></header><main id="m"><p class="mu">Loading…</p></main>
+<script>
+const $=s=>document.querySelector(s),E=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const call=async(u,m="GET",b)=>{const r=await fetch(u,{method:m,headers:{"content-type":"application/json"},body:m=="GET"?undefined:JSON.stringify(b||{})});const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);return d};
+let tab="pending";
+const A=async(u,m)=>{await call(u,m||"POST");show()};
+async function show(){const m=$("#m");try{const s=await call("/api/admin/stats");
+ const rows={pending:async()=>(await call("/api/admin/pending")).map(b=>`<div class="card"><b>${E(b.name)}</b> <span class="mu">${E(b.cat)} · ${E(b.area)}</span><p>${E(b.description)}</p><a href="${E(b.maps_url)}" target="_blank" rel="noopener">Verify on Google Maps</a><div class="row"><button class="pr" onclick="A('/api/admin/businesses/${b.id}/approve')">Approve</button><button onclick="A('/api/admin/businesses/${b.id}/reject')">Reject</button></div></div>`),
+ biz:async()=>(await call("/api/admin/businesses")).map(b=>`<div class="card"><b>${E(b.name)}</b> <span class="mu">${E(b.status)} · ${E(b.cat)}</span><div class="row"><a class="btn" href="/b/${E(b.slug)}">View</a><button onclick="ed(${b.id})">Edit</button><button onclick="confirm('Remove listing?')&&A('/api/admin/businesses/${b.id}','DELETE')">Remove</button></div></div>`),
+ rev:async()=>(await call("/api/admin/reviews")).map(r=>`<div class="card"><span class="st">${"★".repeat(r.rating)}</span> ${E(r.name)} → ${E(r.business)}<p>${E(r.body)}</p><button onclick="A('/api/admin/reviews/${r.id}','DELETE')">Remove</button></div>`),
+ rep:async()=>(await call("/api/admin/reports")).map(r=>`<div class="card"><b>${E(r.reason)}</b> <span class="mu">${E(r.kind)} #${r.target_id}</span><p>${E(r.note)}</p>${r.kind=="review"?`<button onclick="A('/api/admin/reviews/${r.target_id}','DELETE')">Remove review</button> `:""}<button onclick="A('/api/admin/reports/${r.id}/resolve')">Dismiss / resolved</button></div>`)};
+ const list=(await rows[tab]()).join("")||'<p class="mu">Nothing here.</p>';
+ m.innerHTML=`<div class="grid">${Object.entries(s).map(([k,v])=>`<div class="card"><b style="font-size:1.5rem">${v}</b><div class="mu">${E(k.replace(/_/g," "))}</div></div>`).join("")}</div><div class="chips">${[["pending","Pending"],["biz","Businesses"],["rev","Reviews"],["rep","Reports"]].map(([k,t])=>`<button class="${tab==k?"on":""}" onclick="tab='${k}';show()">${t}</button>`).join("")}<button onclick="cat()">+ Category</button></div>${list}`}
+ catch(e){m.innerHTML=`<div class="card">${e.message=="Please sign in"?'Sign in first at <a href="/#account">the main site</a>, then return here.':"Admin access required."}</div>`}}
+async function ed(id){const n=prompt("New name (blank = keep)"),a=prompt("New area (blank = keep)"),u=prompt("New Google Maps link (blank = keep)");try{await call("/api/admin/businesses/"+id,"PATCH",{name:n,area:a,maps_url:u});show()}catch(e){alert(e.message)}}
+async function cat(){const n=prompt("New category name");if(n)try{await call("/api/admin/categories","POST",{name:n});alert("Added")}catch(e){alert(e.message)}}
+show();
+</script></body></html>
